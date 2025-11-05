@@ -35,6 +35,7 @@ struct StringDatase;
 
 std::vector<Monitor> GetMonitorsFromJson(const String&);
 std::vector<Monitor> GetFilteredMonitors(const std::vector<Monitor>&, const String&);
+std::vector<std::vector<Monitor>> GetMonitorsPerDisplayLine(const std::vector<Monitor>&, const Config&);
 std::vector<String> GetSplittedStrings(String, char);
 String FixJsonMistake(String);
 String GetRandomString(int);
@@ -79,6 +80,36 @@ private:
     "Example: \"D,2,U2Z\".<br><br>"
     "<b>Filter lines:</b>";
 
+  /**
+     * @brief The prompt for Line 1.
+     */
+  const static constexpr char* Line1Prompt =
+    "<i>Optional.</i>"
+    "Specify which train/tram line to show on display line 1."
+    "If empty, line 1 will show mixed departures.<br>"
+    "Example: \"25\".<br><br>"
+    "<b>Display Line 1:</b>";
+
+  /**
+     * @brief The prompt for Line 2.
+     */
+  const static constexpr char* Line2Prompt =
+    "<i>Optional.</i>"
+    "Specify which train/tram line to show on display line 2."
+    "If empty, line 2 will show mixed departures.<br>"
+    "Example: \"26\".<br><br>"
+    "<b>Display Line 2:</b>";
+
+  /**
+     * @brief The prompt for Line 3.
+     */
+  const static constexpr char* Line3Prompt =
+    "<i>Optional.</i>"
+    "Specify which train/tram line to show on display line 3."
+    "If empty, line 3 will show mixed departures.<br>"
+    "Example: \"U6\".<br><br>"
+    "<b>Display Line 3:</b>";
+
 public:
   /**
      * @brief Get the Wi-Fi SSID string.
@@ -116,6 +147,30 @@ public:
      */
   static String GetLineFilterPrompt() {
     return String(LineFilterPrompt);
+  }
+
+  /**
+     * @brief Get the Line 1 prompt.
+     * @return The Line 1 prompt.
+     */
+  static String GetLine1Prompt() {
+    return String(Line1Prompt);
+  }
+
+  /**
+     * @brief Get the Line 2 prompt.
+     * @return The Line 2 prompt.
+     */
+  static String GetLine2Prompt() {
+    return String(Line2Prompt);
+  }
+
+  /**
+     * @brief Get the Line 3 prompt.
+     * @return The Line 3 prompt.
+     */
+  static String GetLine3Prompt() {
+    return String(Line3Prompt);
   }
 
   /**
@@ -182,7 +237,11 @@ struct Config {
      * Sets the number of lines to the default of cnt_default_lines.
      */
   explicit Config()
-    : cnt_lines(cnt_default_lines) {}
+    : cnt_lines(cnt_default_lines) {
+    line_1_name = "";
+    line_2_name = "";
+    line_3_name = "";
+  }
 
   /**
      * @brief Copy constructor.
@@ -194,7 +253,10 @@ struct Config {
   Config(const Config& other)
     : cnt_lines(other.cnt_lines),
       lines_filter(other.lines_filter),
-      lines_rbl(other.lines_rbl) {}
+      lines_rbl(other.lines_rbl),
+      line_1_name(other.line_1_name),
+      line_2_name(other.line_2_name),
+      line_3_name(other.line_3_name) {}
   /**
      * @brief Assignment operator.
      *
@@ -208,6 +270,9 @@ struct Config {
       lines_filter = other.lines_filter;
       lines_rbl = other.lines_rbl;
       cnt_lines = other.cnt_lines;
+      line_1_name = other.line_1_name;
+      line_2_name = other.line_2_name;
+      line_3_name = other.line_3_name;
     }
     return *this;
   }
@@ -223,7 +288,10 @@ struct Config {
   bool operator==(const Config& other) const {
     return lines_filter == other.lines_filter
            && lines_rbl == other.lines_rbl
-           && cnt_lines == other.cnt_lines;
+           && cnt_lines == other.cnt_lines
+           && line_1_name == other.line_1_name
+           && line_2_name == other.line_2_name
+           && line_3_name == other.line_3_name;
   }
   /**
      * @brief Inequality operator.
@@ -329,6 +397,45 @@ struct Config {
     return lines_rbl.toInt();
   }
 
+  /**
+     * @brief Sets the line name for a specific display line.
+     *
+     * @param line_idx The line index (1, 2, or 3).
+     * @param name The line name (e.g., "25", "U6", "D").
+     */
+  void SetLineName(int line_idx, const String& name) {
+    switch (line_idx) {
+      case 1:
+        line_1_name = name;
+        break;
+      case 2:
+        line_2_name = name;
+        break;
+      case 3:
+        line_3_name = name;
+        break;
+    }
+  }
+
+  /**
+     * @brief Gets the line name for a specific display line.
+     *
+     * @param line_idx The line index (1, 2, or 3).
+     * @return The line name for that display line.
+     */
+  const String& GetLineName(int line_idx) const {
+    switch (line_idx) {
+      case 1:
+        return line_1_name;
+      case 2:
+        return line_2_name;
+      case 3:
+        return line_3_name;
+      default:
+        return line_1_name;
+    }
+  }
+
 private:
   /**
      * @brief Verifies that the lines count input is valid.
@@ -359,6 +466,11 @@ private:
 
   ///< The lines RBL.
   String lines_rbl;
+
+  ///< Line names for each display line (1, 2, 3)
+  String line_1_name;
+  String line_2_name;
+  String line_3_name;
 };
 
 /**
@@ -381,6 +493,9 @@ struct ConfigFileHandler {
     json["lines_filter"] = cfg.GetLinesFilterAsString();
     json["rbl_id"] = cfg.GetLinesRblAsString();
     json["lines_count"] = cfg.GetLinesCountAsString();
+    json["line_1_name"] = cfg.GetLineName(1);
+    json["line_2_name"] = cfg.GetLineName(2);
+    json["line_3_name"] = cfg.GetLineName(3);
 
     File file_config = SPIFFS.open(JSON_CONFIG_FILE, "w");
     if (!file_config) {
@@ -435,6 +550,9 @@ struct ConfigFileHandler {
             cfg.SetLinesFilter(json["lines_filter"].as<String>());
             cfg.SetLinesRBL(json["rbl_id"].as<String>());
             cfg.SetLinesCount(json["lines_count"].as<String>());
+            cfg.SetLineName(1, json["line_1_name"].as<String>());
+            cfg.SetLineName(2, json["line_2_name"].as<String>());
+            cfg.SetLineName(3, json["line_3_name"].as<String>());
             Serial.println("\nparsed json end");
             return true;
           } else {
@@ -1285,7 +1403,8 @@ public:
 class TraficManager {
 public:
   TraficManager()
-    : shift_cnt(0), coundown_idx(0), p_trafic_clock(nullptr) {}
+    : shift_cnt(0), coundown_idx(0), p_trafic_clock(nullptr),
+      last_toggle_time(0), show_first_departure(true) {}
 
 
   ~TraficManager() {
@@ -1299,26 +1418,26 @@ public:
     prev_iterations = 0;
     //SmartWatch sm(__FUNCTION__);
 
+    // Organize monitors by display line
+    const Config& cfg = global_settings.GetConfig();
+    monitors_per_line = GetMonitorsPerDisplayLine(vec, cfg);
+
+    // Sort each line's monitors by countdown
+    for (auto& line_monitors : monitors_per_line) {
+      sortTrafic(line_monitors);
+    }
+
     if (p_trafic_clock) {
       p_trafic_clock->Reset();
-      const int& cnt_lines = global_settings.GetConfig().GetLinesCountAsInt();
-      const int trafic_set_size = static_cast<int>(all_trafic_set.size());
-      int rows_in_screen_cnt = std::min(cnt_lines, trafic_set_size);
-      auto currentTraficSubset =
-        cyclicSubset(all_trafic_set, rows_in_screen_cnt, shift_cnt);
-      auto futureTraficSubset =
-        cyclicSubset(vec, rows_in_screen_cnt, shift_cnt);
-
-      sortTrafic(currentTraficSubset);
-      sortTrafic(futureTraficSubset);
-
 #ifdef DEBUG_SERIAL_WIEN_MONITOR
-
       Serial.println("updater_");
 #endif
-      SelectiveReset(currentTraficSubset, futureTraficSubset);
+      p_screen->FullResetScroll();
     }
-    all_trafic_set = vec;
+
+    // Reset toggle timer on data update
+    last_toggle_time = millis();
+    show_first_departure = true;
   }
 
 
@@ -1326,55 +1445,27 @@ public:
    * @brief Updates the screen with traffic information.
    */
   void updateScreen() {
-    if (all_trafic_set.empty()) {
+    // If no data yet, show loading message or empty screen with structure
+    if (monitors_per_line.empty()) {
+      // Initialize with empty structure based on config
+      const Config& cfg = global_settings.GetConfig();
+      int numLines = cfg.GetLinesCountAsInt();
+      monitors_per_line.resize(numLines);
+
+      // Draw empty screen with proper structure
+      DrawTraficOnScreen();
       return;
     }
 
-    const int& cnt_lines = global_settings.GetConfig().GetLinesCountAsInt();
-    const int& cnt_countdows = global_settings.cnt_shows_countdows;
-    const int& ms_additional = global_settings.ms_additional_time_for_countdown;
-    const int& ms_full_cycle = global_settings.ms_task_delay_data_update;
-
-    const int trafic_set_size = static_cast<int>(all_trafic_set.size());
-    int rows_in_screen_cnt = std::min(cnt_lines, trafic_set_size);
-    auto currentTraficSubset =
-      cyclicSubset(all_trafic_set, rows_in_screen_cnt, shift_cnt);
-
-    sortTrafic(currentTraficSubset);
-
-    if (!p_trafic_clock) {
-      double f_size = static_cast<double>(all_trafic_set.size());
-      double f_sceen_cells = static_cast<double>(cnt_lines);
-
-      long iterations_cnt = static_cast<long>(ceil(f_size / f_sceen_cells));
-
-      long iteration_ms = ms_full_cycle / iterations_cnt;
-      long countdown_ms = iteration_ms / cnt_countdows;
-      p_trafic_clock = new TraficClock(countdown_ms + ms_additional,
-                                       cnt_countdows, iterations_cnt);
-      return;
-    }
-    //p_trafic_clock->PrintTime();
-    if (p_trafic_clock) {
-      // p_trafic_clock->PrintTime();
-      long cur_iterations = p_trafic_clock->GetIteration();
-      coundown_idx = p_trafic_clock->GetCountdown();
-      if (cur_iterations != prev_iterations) {
-        prev_iterations = cur_iterations;
-
-        auto futureSubset = cyclicSubset(all_trafic_set, rows_in_screen_cnt,
-                                         shift_cnt + cnt_lines);
-
-        sortTrafic(futureSubset);
-#ifdef DEBUG_SERIAL_WIEN_MONITOR
-        Serial.println("inner_");
-#endif
-        SelectiveReset(currentTraficSubset, futureSubset);
-        shift_cnt += global_settings.GetConfig().GetLinesCountAsInt();
-      }
+    // Check if 5 seconds have passed to toggle between departures
+    unsigned long current_time = millis();
+    if (current_time - last_toggle_time >= 5000) {
+      show_first_departure = !show_first_departure;
+      last_toggle_time = current_time;
+      p_screen->FullResetScroll();  // Reset scroll when toggling
     }
 
-    DrawTraficOnScreen(currentTraficSubset);
+    DrawTraficOnScreen();
   }
 
 
@@ -1447,103 +1538,103 @@ public:
 
 
   /**
-   * @brief Draws traffic information on the screen using the provided data.
-   * @param currentTrafficSubset A vector of Monitor objects representing the
-   *                            current traffic data to display.
+   * @brief Draws traffic information on the screen using per-line data.
    */
-  void DrawTraficOnScreen(const std::vector<Monitor>& currentTrafficSubset) {
-    // Get the number of lines to display
+  void DrawTraficOnScreen() {
     size_t numLines = global_settings.GetConfig().GetLinesCountAsInt();
 
-    // Iterate through each line on the screen
     std::vector<ScreenEntity> vec_screen_entity;
-    // generate entity
-    for (size_t i = 0; i < numLines; ++i) {
-      ScreenEntity monitor;
+
+    // Iterate through each display line
+    for (size_t display_line = 0; display_line < numLines; ++display_line) {
+      ScreenEntity entity;
       std::vector<String> clean_str;
       for (size_t x = 0; x < global_settings.cnt_screen_lines_per_rows; ++x) {
         clean_str.push_back("");
         clean_str.push_back("");
       }
-      //std::vector<String>(global_settings.cnt_screen_lines_per_rows, "");
 
-      // Check if there's at least one monitor in the subset
-      if (!currentTrafficSubset.empty()) {
-        size_t monior_idx = i % currentTrafficSubset.size();
-        // dont heve cyrcular arry
-        if (i > (currentTrafficSubset.size() - 1)
-            && currentTrafficSubset.size() > 1) {
-          break;
+      // Check if this display line has any monitors
+      if (display_line < monitors_per_line.size()
+          && !monitors_per_line[display_line].empty()) {
+
+        const auto& line_monitors = monitors_per_line[display_line];
+
+        // Determine which departure to show (first or second)
+        size_t departure_idx = 0;
+        if (!show_first_departure && line_monitors.size() > 1) {
+          departure_idx = 1;  // Show second departure
         }
 
-        const Monitor& currentMonitor = currentTrafficSubset[monior_idx];
-        if (i > currentMonitor.countdown.size() - 1
-            && currentTrafficSubset.size() == 1) {
-          // break if this cyclig getting
-          break;
-        }
-        size_t idx = currentTrafficSubset.size() == 1 ? i : coundown_idx;
-        if (currentTrafficSubset.size() == 1
-            && idx > currentMonitor.countdown.size()) {
-          // break if this single line and countdown for this line cycle
-          break;
-        }
-        // Set the right text
-        monitor.right_txt = currentMonitor.name;
+        // Make sure the departure exists
+        if (departure_idx < line_monitors.size()) {
+          const Monitor& currentMonitor = line_monitors[departure_idx];
 
-        if (!currentMonitor.countdown.empty()) {
-          if (currentMonitor.countdown[idx] == 0) {
-            if ((millis() / 1000) % 2) {
-              monitor.left_txt = String("◱");
+          // Set the line name (right side)
+          entity.right_txt = currentMonitor.name;
+
+          // Set the countdown (left side)
+          if (!currentMonitor.countdown.empty()) {
+            if (currentMonitor.countdown[0] == 0) {
+              // Blink for imminent departure
+              if ((millis() / 1000) % 2) {
+                entity.left_txt = String("◱");
+              } else {
+                entity.left_txt = String("◳");
+              }
             } else {
-              monitor.left_txt = String("◳");
+              entity.left_txt = String(currentMonitor.countdown[0], DEC);
             }
           } else {
-            monitor.left_txt = GetValidCountdown(currentMonitor.countdown, idx);
+            entity.left_txt = "";
+          }
+
+          // Set the destination text (middle)
+          auto splitted_string = getSplittedStringFromCache(currentMonitor.towards);
+          size_t cnt_sub_rows = min(
+            static_cast<size_t>(global_settings.cnt_screen_lines_per_rows),
+            splitted_string.size());
+          size_t cnt_char_splitted_text = 0;
+          for (size_t j = 0; j < cnt_sub_rows; ++j) {
+            clean_str[j] = splitted_string[j];
+            cnt_char_splitted_text += splitted_string[j].length();
+          }
+
+          if (!currentMonitor.towards.isEmpty()) {
+            if ((static_cast<float>(cnt_char_splitted_text)
+                   / static_cast<float>(currentMonitor.towards.length())
+                 < 0.5)) {
+              String str_max = getMaximumPosibleSingleNoScrollWord(
+                currentMonitor.towards);
+              clean_str[0] = str_max;
+              clean_str[1].clear();
+            }
+          }
+
+          // Add description if present
+          if (currentMonitor.description.length()) {
+            clean_str[1] = currentMonitor.description;
           }
         }
-        // Serial.println("block 2");
-        // Set lines for display
-
-        auto splitted_string = getSplittedStringFromCache(currentMonitor.towards);
-        size_t cnt_sub_rows = min(
-          static_cast<size_t>(global_settings.cnt_screen_lines_per_rows),
-          splitted_string.size());
-        size_t cnt_char_splitted_text = 0;
-        for (size_t j = 0; j < cnt_sub_rows; ++j) {
-          clean_str[j] = splitted_string[j];
-          cnt_char_splitted_text += splitted_string[j].length();
-        }
-        if (!currentMonitor.towards.isEmpty()) {
-          if ((static_cast<float>(cnt_char_splitted_text)
-                 / static_cast<float>(currentMonitor.towards.length())
-               < 0.5)) {
-            // this mean that bigger that half information lossed
-            // not enought space
-            // just get bigger word
-            // not used but if want to slool just add towards
-            String str_max = getMaximumPosibleSingleNoScrollWord(
-              currentMonitor.towards);
-            clean_str[0] = str_max;
-            clean_str[1].clear();
-          }
-        }
-
-        // TODO: oprimize it
-        if (currentMonitor.description.length()) {
-          clean_str[1] = currentMonitor.description;
+      } else {
+        // No departures for this line - show configured line name if any
+        const Config& cfg = global_settings.GetConfig();
+        String configuredLine = cfg.GetLineName(display_line + 1);
+        if (!configuredLine.isEmpty()) {
+          entity.right_txt = configuredLine;
+          entity.left_txt = "-";
+          // Show "No departures" or similar message
+        } else {
+          entity.right_txt = "";
+          entity.left_txt = "";
         }
       }
-      monitor.lines = clean_str;
-      // Serial.println("block 3");
-      //  Set the idx_row on the screen
-      vec_screen_entity.push_back(monitor);
-      //p_screen->SetRow(monitor, i);
-      // p_screen->PrintCordDebug();
 
-      // Serial.println("roww setted;");
+      entity.lines = clean_str;
+      vec_screen_entity.push_back(entity);
     }
-    // render entity
+
+    // Render all entities
     for (size_t i = 0; i < vec_screen_entity.size(); ++i) {
       p_screen->SetRow(vec_screen_entity[i], i);
     }
@@ -1677,14 +1768,13 @@ public:
   }
 
 private:
-  std::vector<Monitor> all_trafic_set;
+  std::vector<std::vector<Monitor>> monitors_per_line;  // Monitors organized by display line
   int shift_cnt;
   int coundown_idx;
-  // unsigned long previousMillisTraficSet;
-  // unsigned long previousMillisCountDown;
-  // const int INTERVAL_UPDATE = global_settings.ms_task_delay_data_update;
   TraficClock* p_trafic_clock;
   long prev_iterations = 0;
+  unsigned long last_toggle_time;  // Time of last departure toggle
+  bool show_first_departure;       // Toggle between first and second departure
 };
 
 ////////////////////////////Functions////////////////////////////////////////////
@@ -1942,6 +2032,39 @@ std::vector<Monitor> GetFilteredMonitors(const std::vector<Monitor>& data,
 }
 
 
+/**
+ * @brief Organizes monitors into per-display-line vectors based on config.
+ * @param data The input vector of all Monitor objects.
+ * @param config The configuration containing line assignments.
+ * @return A vector of vectors, where each inner vector contains monitors for that display line.
+ */
+std::vector<std::vector<Monitor>> GetMonitorsPerDisplayLine(
+  const std::vector<Monitor>& data,
+  const Config& config) {
+
+  int numLines = config.GetLinesCountAsInt();
+  std::vector<std::vector<Monitor>> result(numLines);
+
+  for (int i = 0; i < numLines; i++) {
+    String lineName = config.GetLineName(i + 1);
+
+    if (lineName.isEmpty()) {
+      // If no line specified, this display line can show any departure
+      result[i] = data;
+    } else {
+      // Filter to show only departures from this specific line
+      for (const auto& monitor : data) {
+        if (monitor.name == lineName) {
+          result[i].push_back(monitor);
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+
 void PrintDegbugMonitors(const Monitor& monitor) {
 #if 1
   Serial.print("Name: ");
@@ -1976,10 +2099,24 @@ void UpdateDataTask(void* pvParameters) {
       // Fetch JSON data (may take several seconds)
       const auto& cfg = global_settings.GetConfig();
 
+      Serial.print("Fetching RBL: ");
+      Serial.println(cfg.GetLinesRblAsString());
+      Serial.print("Line 1 config: ");
+      Serial.println(cfg.GetLineName(1));
+      Serial.print("Line 2 config: ");
+      Serial.println(cfg.GetLineName(2));
+      Serial.print("Line 3 config: ");
+      Serial.println(cfg.GetLineName(3));
+
       const String& rbl_id = GetJson(cfg.GetLinesRblAsString());
       allTrafficSetInit = GetMonitorsFromJson(rbl_id);
+      Serial.print("Monitors fetched: ");
+      Serial.println(allTrafficSetInit.size());
+
       const String& raw_filter = cfg.GetLinesFilterAsString();
       allTrafficSetInit = GetFilteredMonitors(allTrafficSetInit, raw_filter);
+      Serial.print("Monitors after filter: ");
+      Serial.println(allTrafficSetInit.size());
 
       // Acquire the data mutex
       if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
@@ -2096,6 +2233,9 @@ void WiFiManagerTask() {
   const String& rblValue = old_config.GetLinesRblAsString();
   const String& countValue = old_config.GetLinesCountAsString();
   const String& filterValue = old_config.GetLinesFilterAsString();
+  const String& line1Value = old_config.GetLineName(1);
+  const String& line2Value = old_config.GetLineName(2);
+  const String& line3Value = old_config.GetLineName(3);
 
   // Create Wi-FiManager parameters
   WiFiManagerParameter custom_html_elem_hr("<hr>");
@@ -2105,6 +2245,9 @@ void WiFiManagerTask() {
     Config::cnt_min_lines, Config::cnt_max_lines, Config::cnt_default_lines);
 
   String cpp_line_filter_promt = StringDatabase::GetLineFilterPrompt();
+  String cpp_line1_prompt = StringDatabase::GetLine1Prompt();
+  String cpp_line2_prompt = StringDatabase::GetLine2Prompt();
+  String cpp_line3_prompt = StringDatabase::GetLine3Prompt();
   String cpp_ssid = StringDatabase::GetWiFissid();
   String cpp_instruction = StringDatabase::GetInstructionsText();
   WiFiManagerParameter rblParam("lines_rbl", cpp_lines_rbl_promt.c_str(),
@@ -2115,12 +2258,25 @@ void WiFiManagerTask() {
   WiFiManagerParameter filterParam(
     "lines_filter", cpp_line_filter_promt.c_str(), filterValue.c_str(), 64);
 
+  WiFiManagerParameter line1Param("line_1_name", cpp_line1_prompt.c_str(),
+                                  line1Value.c_str(), 64);
+  WiFiManagerParameter line2Param("line_2_name", cpp_line2_prompt.c_str(),
+                                  line2Value.c_str(), 64);
+  WiFiManagerParameter line3Param("line_3_name", cpp_line3_prompt.c_str(),
+                                  line3Value.c_str(), 64);
+
   // Add parameters to Wi-FiManager
   wifiManager.addParameter(&rblParam);
   wifiManager.addParameter(&custom_html_elem_hr);
   wifiManager.addParameter(&countParam);
   wifiManager.addParameter(&custom_html_elem_hr);
   wifiManager.addParameter(&filterParam);
+  wifiManager.addParameter(&custom_html_elem_hr);
+  wifiManager.addParameter(&line1Param);
+  wifiManager.addParameter(&custom_html_elem_hr);
+  wifiManager.addParameter(&line2Param);
+  wifiManager.addParameter(&custom_html_elem_hr);
+  wifiManager.addParameter(&line3Param);
 
   if (WiFi.psk().length() == 0) {
     // show screen wifi hint
@@ -2138,10 +2294,16 @@ void WiFiManagerTask() {
   new_config.SetLinesFilter(filterParam.getValue());
   new_config.SetLinesRBL(rblParam.getValue());
   new_config.SetLinesCount(countParam.getValue());
+  new_config.SetLineName(1, line1Param.getValue());
+  new_config.SetLineName(2, line2Param.getValue());
+  new_config.SetLineName(3, line3Param.getValue());
 
   Serial.println(new_config.GetLinesFilterAsString());
   Serial.println(new_config.GetLinesRblAsString());
   Serial.println(new_config.GetLinesCountAsString());
+  Serial.println("Line 1: " + new_config.GetLineName(1));
+  Serial.println("Line 2: " + new_config.GetLineName(2));
+  Serial.println("Line 3: " + new_config.GetLineName(3));
 
   if (!isConnected) {
     Serial.println("Failed to connect");
