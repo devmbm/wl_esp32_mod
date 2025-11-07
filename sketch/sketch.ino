@@ -36,6 +36,7 @@ struct StringDatase;
 std::vector<Monitor> GetMonitorsFromJson(const String&);
 std::vector<Monitor> GetFilteredMonitors(const std::vector<Monitor>&, const String&);
 std::vector<std::vector<Monitor>> GetMonitorsPerDisplayLine(const std::vector<Monitor>&, const Config&);
+std::vector<std::vector<Monitor>> GetMonitorsPerDisplayLineWithSeparateLine3(const std::vector<Monitor>&, const std::vector<Monitor>&, const Config&);
 std::vector<String> GetSplittedStrings(String, char);
 String FixJsonMistake(String);
 String GetRandomString(int);
@@ -110,6 +111,26 @@ private:
     "Example: \"U6\".<br><br>"
     "<b>Display Line 3:</b>";
 
+  /**
+     * @brief The prompt for Line 3 RBL.
+     */
+  const static constexpr char* Line3RBLPrompt =
+    "<i>Optional.</i>"
+    "Separate Stop ID (RBL) for Line 3 only. "
+    "If empty, uses main RBL above.<br>"
+    "Example: \"123\".<br><br>"
+    "<b>Line 3 Stop ID (RBL):</b>";
+
+  /**
+     * @brief The prompt for Line 3 Filter.
+     */
+  const static constexpr char* Line3FilterPrompt =
+    "<i>Optional.</i>"
+    "Filter for Line 3 stop only. "
+    "If empty, uses main filter above.<br>"
+    "Example: \"U6,26A\".<br><br>"
+    "<b>Line 3 Filter:</b>";
+
 public:
   /**
      * @brief Get the Wi-Fi SSID string.
@@ -171,6 +192,22 @@ public:
      */
   static String GetLine3Prompt() {
     return String(Line3Prompt);
+  }
+
+  /**
+     * @brief Get the Line 3 RBL prompt.
+     * @return The Line 3 RBL prompt.
+     */
+  static String GetLine3RBLPrompt() {
+    return String(Line3RBLPrompt);
+  }
+
+  /**
+     * @brief Get the Line 3 Filter prompt.
+     * @return The Line 3 Filter prompt.
+     */
+  static String GetLine3FilterPrompt() {
+    return String(Line3FilterPrompt);
   }
 
   /**
@@ -241,6 +278,8 @@ struct Config {
     line_1_name = "";
     line_2_name = "";
     line_3_name = "";
+    line_3_rbl = "";
+    line_3_filter = "";
   }
 
   /**
@@ -256,7 +295,9 @@ struct Config {
       lines_rbl(other.lines_rbl),
       line_1_name(other.line_1_name),
       line_2_name(other.line_2_name),
-      line_3_name(other.line_3_name) {}
+      line_3_name(other.line_3_name),
+      line_3_rbl(other.line_3_rbl),
+      line_3_filter(other.line_3_filter) {}
   /**
      * @brief Assignment operator.
      *
@@ -273,6 +314,8 @@ struct Config {
       line_1_name = other.line_1_name;
       line_2_name = other.line_2_name;
       line_3_name = other.line_3_name;
+      line_3_rbl = other.line_3_rbl;
+      line_3_filter = other.line_3_filter;
     }
     return *this;
   }
@@ -291,7 +334,9 @@ struct Config {
            && cnt_lines == other.cnt_lines
            && line_1_name == other.line_1_name
            && line_2_name == other.line_2_name
-           && line_3_name == other.line_3_name;
+           && line_3_name == other.line_3_name
+           && line_3_rbl == other.line_3_rbl
+           && line_3_filter == other.line_3_filter;
   }
   /**
      * @brief Inequality operator.
@@ -436,6 +481,42 @@ struct Config {
     }
   }
 
+  /**
+     * @brief Sets the RBL for line 3.
+     *
+     * @param str The RBL to set.
+     */
+  void SetLine3RBL(const String& str) {
+    line_3_rbl = str;
+  }
+
+  /**
+     * @brief Gets the RBL for line 3.
+     *
+     * @return The RBL for line 3.
+     */
+  const String& GetLine3RBL() const {
+    return line_3_rbl;
+  }
+
+  /**
+     * @brief Sets the filter for line 3.
+     *
+     * @param str The filter to set.
+     */
+  void SetLine3Filter(const String& str) {
+    line_3_filter = str;
+  }
+
+  /**
+     * @brief Gets the filter for line 3.
+     *
+     * @return The filter for line 3.
+     */
+  const String& GetLine3Filter() const {
+    return line_3_filter;
+  }
+
 private:
   /**
      * @brief Verifies that the lines count input is valid.
@@ -471,6 +552,12 @@ private:
   String line_1_name;
   String line_2_name;
   String line_3_name;
+
+  ///< Separate RBL for line 3 (optional)
+  String line_3_rbl;
+
+  ///< Separate filter for line 3 (optional)
+  String line_3_filter;
 };
 
 /**
@@ -496,6 +583,8 @@ struct ConfigFileHandler {
     json["line_1_name"] = cfg.GetLineName(1);
     json["line_2_name"] = cfg.GetLineName(2);
     json["line_3_name"] = cfg.GetLineName(3);
+    json["line_3_rbl"] = cfg.GetLine3RBL();
+    json["line_3_filter"] = cfg.GetLine3Filter();
 
     File file_config = SPIFFS.open(JSON_CONFIG_FILE, "w");
     if (!file_config) {
@@ -553,6 +642,8 @@ struct ConfigFileHandler {
             cfg.SetLineName(1, json["line_1_name"].as<String>());
             cfg.SetLineName(2, json["line_2_name"].as<String>());
             cfg.SetLineName(3, json["line_3_name"].as<String>());
+            cfg.SetLine3RBL(json["line_3_rbl"].as<String>());
+            cfg.SetLine3Filter(json["line_3_filter"].as<String>());
             Serial.println("\nparsed json end");
             return true;
           } else {
@@ -628,7 +719,7 @@ struct GlobalSettings {
   static constexpr int ms_task_delay_resset_button = 1000;
 
   ///< Number of milliseconds to delay between updating the data.
-  static constexpr int ms_task_delay_data_update = 20 * 1000;
+  static constexpr int ms_task_delay_data_update = 60 * 1000;
 
   ///< Number of milliseconds to delay between updating the screen.
   static constexpr int ms_task_delay_screen_update = 10;
@@ -681,6 +772,115 @@ public:
     ConfigFileHandler::DeleteConfigFile();
   }
 } global_settings;
+
+
+/**
+ * @brief Manages API call caching and rate limiting for RBL data fetches.
+ *
+ * This class ensures:
+ * - Only one API call per unique RBL per minute
+ * - Cached responses are shared between lines using the same RBL
+ * - Sequential API calls with delay when fetching multiple RBLs
+ */
+class ApiCacheManager {
+private:
+  struct CachedData {
+    String json_response;
+    unsigned long timestamp_ms;
+    bool is_valid;
+
+    CachedData() : json_response(""), timestamp_ms(0), is_valid(false) {}
+  };
+
+  std::map<String, CachedData> cache;
+  static constexpr unsigned long CACHE_DURATION_MS = 60000; // 1 minute
+  static constexpr unsigned long SEQUENTIAL_DELAY_MS = 3000; // 3 seconds between API calls
+  unsigned long last_api_call_ms = 0;
+
+public:
+  /**
+   * @brief Fetches JSON data for an RBL, using cache if valid.
+   * @param rbl_id The RBL identifier to fetch.
+   * @param force_refresh If true, bypasses cache and fetches fresh data.
+   * @return JSON string response.
+   */
+  String FetchRBL(const String& rbl_id, bool force_refresh = false) {
+    if (rbl_id.isEmpty()) {
+      return "";
+    }
+
+    unsigned long current_ms = millis();
+
+    // Check if we have valid cached data
+    if (!force_refresh && cache.count(rbl_id) > 0) {
+      CachedData& cached = cache[rbl_id];
+      unsigned long age_ms = current_ms - cached.timestamp_ms;
+
+      if (cached.is_valid && age_ms < CACHE_DURATION_MS) {
+        Serial.print("Using cached data for RBL ");
+        Serial.print(rbl_id);
+        Serial.print(" (age: ");
+        Serial.print(age_ms / 1000);
+        Serial.println(" seconds)");
+        return cached.json_response;
+      }
+    }
+
+    // Enforce sequential delay between API calls
+    unsigned long time_since_last_call = current_ms - last_api_call_ms;
+    if (last_api_call_ms > 0 && time_since_last_call < SEQUENTIAL_DELAY_MS) {
+      unsigned long delay_needed = SEQUENTIAL_DELAY_MS - time_since_last_call;
+      Serial.print("Delaying API call for ");
+      Serial.print(delay_needed);
+      Serial.println(" ms to respect rate limits");
+      delay(delay_needed);
+    }
+
+    // Fetch fresh data
+    Serial.print("Fetching fresh data for RBL: ");
+    Serial.println(rbl_id);
+    String json_data = GetJson(rbl_id);
+    last_api_call_ms = millis();
+
+    // Update cache
+    CachedData& cached = cache[rbl_id];
+    cached.json_response = json_data;
+    cached.timestamp_ms = last_api_call_ms;
+    cached.is_valid = !json_data.isEmpty();
+
+    return json_data;
+  }
+
+  /**
+   * @brief Invalidates cached data for a specific RBL.
+   * @param rbl_id The RBL identifier to invalidate.
+   */
+  void InvalidateCache(const String& rbl_id) {
+    if (cache.count(rbl_id) > 0) {
+      cache[rbl_id].is_valid = false;
+    }
+  }
+
+  /**
+   * @brief Clears all cached data.
+   */
+  void ClearCache() {
+    cache.clear();
+  }
+
+  /**
+   * @brief Gets the age of cached data for an RBL in milliseconds.
+   * @param rbl_id The RBL identifier.
+   * @return Age in milliseconds, or ULONG_MAX if not cached.
+   */
+  unsigned long GetCacheAge(const String& rbl_id) {
+    if (cache.count(rbl_id) > 0 && cache[rbl_id].is_valid) {
+      return millis() - cache[rbl_id].timestamp_ms;
+    }
+    return ULONG_MAX;
+  }
+} api_cache;
+
 
 class SmartWatch {
 public:
@@ -1413,14 +1613,20 @@ public:
 
 
   // Block 1: Update Traffic Data
-  void update(const std::vector<Monitor>& vec) {
+  void update(const std::vector<Monitor>& mainData, const std::vector<Monitor>& line3Data = std::vector<Monitor>()) {
     //shift_cnt = 0;
     prev_iterations = 0;
     //SmartWatch sm(__FUNCTION__);
 
     // Organize monitors by display line
     const Config& cfg = global_settings.GetConfig();
-    monitors_per_line = GetMonitorsPerDisplayLine(vec, cfg);
+
+    // If we have separate Line 3 data, handle it specially
+    if (cfg.GetLinesCountAsInt() == 3 && !line3Data.empty()) {
+      monitors_per_line = GetMonitorsPerDisplayLineWithSeparateLine3(mainData, line3Data, cfg);
+    } else {
+      monitors_per_line = GetMonitorsPerDisplayLine(mainData, cfg);
+    }
 
     // Sort each line's monitors by countdown
     for (auto& line_monitors : monitors_per_line) {
@@ -2065,6 +2271,59 @@ std::vector<std::vector<Monitor>> GetMonitorsPerDisplayLine(
 }
 
 
+/**
+ * @brief Organizes monitors into per-display-line vectors with separate data for line 3.
+ * @param mainData The input vector of Monitor objects for lines 1 and 2.
+ * @param line3Data The input vector of Monitor objects specifically for line 3.
+ * @param config The configuration containing line assignments.
+ * @return A vector of vectors, where each inner vector contains monitors for that display line.
+ */
+std::vector<std::vector<Monitor>> GetMonitorsPerDisplayLineWithSeparateLine3(
+  const std::vector<Monitor>& mainData,
+  const std::vector<Monitor>& line3Data,
+  const Config& config) {
+
+  int numLines = config.GetLinesCountAsInt();
+  std::vector<std::vector<Monitor>> result(numLines);
+
+  // Process lines 1 and 2 from main data
+  for (int i = 0; i < 2 && i < numLines; i++) {
+    String lineName = config.GetLineName(i + 1);
+
+    if (lineName.isEmpty()) {
+      // If no line specified, this display line can show any departure
+      result[i] = mainData;
+    } else {
+      // Filter to show only departures from this specific line
+      for (const auto& monitor : mainData) {
+        if (monitor.name == lineName) {
+          result[i].push_back(monitor);
+        }
+      }
+    }
+  }
+
+  // Process line 3 from separate data source
+  if (numLines >= 3) {
+    String lineName = config.GetLineName(3);
+
+    if (lineName.isEmpty()) {
+      // If no line specified, show all from line 3 data
+      result[2] = line3Data;
+    } else {
+      // Filter line 3 data to show only this specific line
+      for (const auto& monitor : line3Data) {
+        if (monitor.name == lineName) {
+          result[2].push_back(monitor);
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+
 void PrintDegbugMonitors(const Monitor& monitor) {
 #if 1
   Serial.print("Name: ");
@@ -2099,7 +2358,7 @@ void UpdateDataTask(void* pvParameters) {
       // Fetch JSON data (may take several seconds)
       const auto& cfg = global_settings.GetConfig();
 
-      Serial.print("Fetching RBL: ");
+      Serial.print("Main RBL: ");
       Serial.println(cfg.GetLinesRblAsString());
       Serial.print("Line 1 config: ");
       Serial.println(cfg.GetLineName(1));
@@ -2108,9 +2367,11 @@ void UpdateDataTask(void* pvParameters) {
       Serial.print("Line 3 config: ");
       Serial.println(cfg.GetLineName(3));
 
-      const String& rbl_id = GetJson(cfg.GetLinesRblAsString());
-      allTrafficSetInit = GetMonitorsFromJson(rbl_id);
-      Serial.print("Monitors fetched: ");
+      // Fetch main RBL data using cache manager
+      const String& main_rbl = cfg.GetLinesRblAsString();
+      const String& rbl_json = api_cache.FetchRBL(main_rbl);
+      allTrafficSetInit = GetMonitorsFromJson(rbl_json);
+      Serial.print("Monitors fetched from main RBL: ");
       Serial.println(allTrafficSetInit.size());
 
       const String& raw_filter = cfg.GetLinesFilterAsString();
@@ -2118,22 +2379,41 @@ void UpdateDataTask(void* pvParameters) {
       Serial.print("Monitors after filter: ");
       Serial.println(allTrafficSetInit.size());
 
+      // Check if we need to fetch separate data for Line 3
+      std::vector<Monitor> line3TrafficSet;
+      if (cfg.GetLinesCountAsInt() == 3 && !cfg.GetLine3RBL().isEmpty()) {
+        const String& line3_rbl = cfg.GetLine3RBL();
+
+        // Check if Line 3 uses the same RBL as main
+        if (line3_rbl == main_rbl) {
+          Serial.println("Line 3 uses same RBL as main - reusing data");
+          line3TrafficSet = allTrafficSetInit; // Reuse already fetched data
+        } else {
+          Serial.print("Fetching separate RBL for Line 3: ");
+          Serial.println(line3_rbl);
+
+          // Use cache manager with automatic delay
+          const String& line3_rbl_json = api_cache.FetchRBL(line3_rbl);
+          line3TrafficSet = GetMonitorsFromJson(line3_rbl_json);
+          Serial.print("Line 3 monitors fetched: ");
+          Serial.println(line3TrafficSet.size());
+        }
+
+        // Apply Line 3 specific filter if configured, otherwise use main filter
+        String line3_filter = cfg.GetLine3Filter();
+        if (line3_filter.isEmpty()) {
+          line3_filter = raw_filter;
+        }
+        line3TrafficSet = GetFilteredMonitors(line3TrafficSet, line3_filter);
+        Serial.print("Line 3 monitors after filter: ");
+        Serial.println(line3TrafficSet.size());
+      }
+
       // Acquire the data mutex
       if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
-        /* //DEBUG
-            for (auto& c : allTrafficSetInit) {
-              static int k = 0;
-              if (k % 2 == 0) {
-                String random = GetRandomString(25);
-                if (random.length() > 15) {
-                  c.description = random;
-                }
-              }
-              k++;
-            }
-            */
-        if (!allTrafficSetInit.empty()) {
-          pTraficManager->update(allTrafficSetInit);
+        if (!allTrafficSetInit.empty() || !line3TrafficSet.empty()) {
+          // Pass both datasets to the traffic manager
+          pTraficManager->update(allTrafficSetInit, line3TrafficSet);
 #ifdef DEBUG_SERIAL_WIEN_MONITOR
           Serial.println("Monitor data updated.");
 #endif
@@ -2236,6 +2516,8 @@ void WiFiManagerTask() {
   const String& line1Value = old_config.GetLineName(1);
   const String& line2Value = old_config.GetLineName(2);
   const String& line3Value = old_config.GetLineName(3);
+  const String& line3RblValue = old_config.GetLine3RBL();
+  const String& line3FilterValue = old_config.GetLine3Filter();
 
   // Create Wi-FiManager parameters
   WiFiManagerParameter custom_html_elem_hr("<hr>");
@@ -2248,6 +2530,8 @@ void WiFiManagerTask() {
   String cpp_line1_prompt = StringDatabase::GetLine1Prompt();
   String cpp_line2_prompt = StringDatabase::GetLine2Prompt();
   String cpp_line3_prompt = StringDatabase::GetLine3Prompt();
+  String cpp_line3_rbl_prompt = StringDatabase::GetLine3RBLPrompt();
+  String cpp_line3_filter_prompt = StringDatabase::GetLine3FilterPrompt();
   String cpp_ssid = StringDatabase::GetWiFissid();
   String cpp_instruction = StringDatabase::GetInstructionsText();
   WiFiManagerParameter rblParam("lines_rbl", cpp_lines_rbl_promt.c_str(),
@@ -2264,6 +2548,10 @@ void WiFiManagerTask() {
                                   line2Value.c_str(), 64);
   WiFiManagerParameter line3Param("line_3_name", cpp_line3_prompt.c_str(),
                                   line3Value.c_str(), 64);
+  WiFiManagerParameter line3RblParam("line_3_rbl", cpp_line3_rbl_prompt.c_str(),
+                                     line3RblValue.c_str(), 64);
+  WiFiManagerParameter line3FilterParam("line_3_filter", cpp_line3_filter_prompt.c_str(),
+                                        line3FilterValue.c_str(), 64);
 
   // Add parameters to Wi-FiManager
   wifiManager.addParameter(&rblParam);
@@ -2277,6 +2565,10 @@ void WiFiManagerTask() {
   wifiManager.addParameter(&line2Param);
   wifiManager.addParameter(&custom_html_elem_hr);
   wifiManager.addParameter(&line3Param);
+  wifiManager.addParameter(&custom_html_elem_hr);
+  wifiManager.addParameter(&line3RblParam);
+  wifiManager.addParameter(&custom_html_elem_hr);
+  wifiManager.addParameter(&line3FilterParam);
 
   if (WiFi.psk().length() == 0) {
     // show screen wifi hint
@@ -2297,6 +2589,8 @@ void WiFiManagerTask() {
   new_config.SetLineName(1, line1Param.getValue());
   new_config.SetLineName(2, line2Param.getValue());
   new_config.SetLineName(3, line3Param.getValue());
+  new_config.SetLine3RBL(line3RblParam.getValue());
+  new_config.SetLine3Filter(line3FilterParam.getValue());
 
   Serial.println(new_config.GetLinesFilterAsString());
   Serial.println(new_config.GetLinesRblAsString());
@@ -2304,6 +2598,8 @@ void WiFiManagerTask() {
   Serial.println("Line 1: " + new_config.GetLineName(1));
   Serial.println("Line 2: " + new_config.GetLineName(2));
   Serial.println("Line 3: " + new_config.GetLineName(3));
+  Serial.println("Line 3 RBL: " + new_config.GetLine3RBL());
+  Serial.println("Line 3 Filter: " + new_config.GetLine3Filter());
 
   if (!isConnected) {
     Serial.println("Failed to connect");
