@@ -1457,9 +1457,9 @@ public:
       return;
     }
 
-    // Check if 5 seconds have passed to toggle between departures
+    // Check if 4 seconds have passed to toggle between departures
     unsigned long current_time = millis();
-    if (current_time - last_toggle_time >= 5000) {
+    if (current_time - last_toggle_time >= 4000) {
       show_first_departure = !show_first_departure;
       last_toggle_time = current_time;
       p_screen->FullResetScroll();  // Reset scroll when toggling
@@ -1560,22 +1560,22 @@ public:
 
         const auto& line_monitors = monitors_per_line[display_line];
 
-        // Determine which departure to show (first or second)
-        size_t departure_idx = 0;
-        if (!show_first_departure && line_monitors.size() > 1) {
-          departure_idx = 1;  // Show second departure
-        }
+        // Find the monitor with the earliest departure
+        if (!line_monitors.empty()) {
+          const Monitor& currentMonitor = line_monitors[0];
 
-        // Make sure the departure exists
-        if (departure_idx < line_monitors.size()) {
-          const Monitor& currentMonitor = line_monitors[departure_idx];
+          // Determine which countdown to show (first or second) from the SAME monitor
+          size_t countdown_idx = 0;
+          if (!show_first_departure && currentMonitor.countdown.size() > 1) {
+            countdown_idx = 1;  // Show second countdown from same route
+          }
 
           // Set the line name (right side)
           entity.right_txt = currentMonitor.name;
 
-          // Set the countdown (left side)
-          if (!currentMonitor.countdown.empty()) {
-            if (currentMonitor.countdown[0] == 0) {
+          // Set the countdown (left side) - use the countdown at countdown_idx
+          if (countdown_idx < currentMonitor.countdown.size()) {
+            if (currentMonitor.countdown[countdown_idx] == 0) {
               // Blink for imminent departure
               if ((millis() / 1000) % 2) {
                 entity.left_txt = String("◱");
@@ -1583,7 +1583,7 @@ public:
                 entity.left_txt = String("◳");
               }
             } else {
-              entity.left_txt = String(currentMonitor.countdown[0], DEC);
+              entity.left_txt = String(currentMonitor.countdown[countdown_idx], DEC);
             }
           } else {
             entity.left_txt = "";
