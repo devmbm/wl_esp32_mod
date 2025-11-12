@@ -2352,79 +2352,124 @@ void UpdateDataTask(void* pvParameters) {
   const int& delay_planned_ms = global_settings.ms_task_delay_data_update;
   int delay_real_ms = 0;
 
+  // Retry delays in milliseconds: 5s, 10s, 15s, 20s, 40s
+  const int retry_delays_ms[] = {5000, 10000, 15000, 20000, 40000};
+  const int num_retries = sizeof(retry_delays_ms) / sizeof(retry_delays_ms[0]);
+
   while (true) {
-    {  //SmartWatch start
-      SmartWatch sm(__FUNCTION__);
-      // Fetch JSON data (may take several seconds)
-      const auto& cfg = global_settings.GetConfig();
+    bool update_successful = false;
+    int retry_attempt = 0;
 
-      Serial.print("Main RBL: ");
-      Serial.println(cfg.GetLinesRblAsString());
-      Serial.print("Line 1 config: ");
-      Serial.println(cfg.GetLineName(1));
-      Serial.print("Line 2 config: ");
-      Serial.println(cfg.GetLineName(2));
-      Serial.print("Line 3 config: ");
-      Serial.println(cfg.GetLineName(3));
+    // Keep trying until we succeed or exhaust all retries
+    while (!update_successful && retry_attempt <= num_retries) {
+      {  //SmartWatch start
+        SmartWatch sm(__FUNCTION__);
+        // Fetch JSON data (may take several seconds)
+        const auto& cfg = global_settings.GetConfig();
 
-      // Fetch main RBL data using cache manager
-      const String& main_rbl = cfg.GetLinesRblAsString();
-      const String& rbl_json = api_cache.FetchRBL(main_rbl);
-      allTrafficSetInit = GetMonitorsFromJson(rbl_json);
-      Serial.print("Monitors fetched from main RBL: ");
-      Serial.println(allTrafficSetInit.size());
-
-      const String& raw_filter = cfg.GetLinesFilterAsString();
-      allTrafficSetInit = GetFilteredMonitors(allTrafficSetInit, raw_filter);
-      Serial.print("Monitors after filter: ");
-      Serial.println(allTrafficSetInit.size());
-
-      // Check if we need to fetch separate data for Line 3
-      std::vector<Monitor> line3TrafficSet;
-      if (cfg.GetLinesCountAsInt() == 3 && !cfg.GetLine3RBL().isEmpty()) {
-        const String& line3_rbl = cfg.GetLine3RBL();
-
-        // Check if Line 3 uses the same RBL as main
-        if (line3_rbl == main_rbl) {
-          Serial.println("Line 3 uses same RBL as main - reusing data");
-          line3TrafficSet = allTrafficSetInit; // Reuse already fetched data
+        if (retry_attempt == 0) {
+          // Normal update - print debug info
+          Serial.print("Main RBL: ");
+          Serial.println(cfg.GetLinesRblAsString());
+          Serial.print("Line 1 config: ");
+          Serial.println(cfg.GetLineName(1));
+          Serial.print("Line 2 config: ");
+          Serial.println(cfg.GetLineName(2));
+          Serial.print("Line 3 config: ");
+          Serial.println(cfg.GetLineName(3));
         } else {
-          Serial.print("Fetching separate RBL for Line 3: ");
-          Serial.println(line3_rbl);
+          Serial.print("Retry attempt ");
+          Serial.print(retry_attempt);
+          Serial.print(" of ");
+          Serial.println(num_retries);
+        }
 
-          // Use cache manager with automatic delay
-          const String& line3_rbl_json = api_cache.FetchRBL(line3_rbl);
-          line3TrafficSet = GetMonitorsFromJson(line3_rbl_json);
-          Serial.print("Line 3 monitors fetched: ");
+        // Fetch main RBL data using cache manager
+        const String& main_rbl = cfg.GetLinesRblAsString();
+        const String& rbl_json = api_cache.FetchRBL(main_rbl);
+        std::vector<Monitor> tempTrafficSet = GetMonitorsFromJson(rbl_json);
+        Serial.print("Monitors fetched from main RBL: ");
+        Serial.println(tempTrafficSet.size());
+
+        const String& raw_filter = cfg.GetLinesFilterAsString();
+        tempTrafficSet = GetFilteredMonitors(tempTrafficSet, raw_filter);
+        Serial.print("Monitors after filter: ");
+        Serial.println(tempTrafficSet.size());
+
+        // Check if we need to fetch separate data for Line 3
+        std::vector<Monitor> line3TrafficSet;
+        if (cfg.GetLinesCountAsInt() == 3 && !cfg.GetLine3RBL().isEmpty()) {
+          const String& line3_rbl = cfg.GetLine3RBL();
+
+          // Check if Line 3 uses the same RBL as main
+          if (line3_rbl == main_rbl) {
+            Serial.println("Line 3 uses same RBL as main - reusing data");
+            line3TrafficSet = tempTrafficSet; // Reuse already fetched data
+          } else {
+            Serial.print("Fetching separate RBL for Line 3: ");
+            Serial.println(line3_rbl);
+
+            // Use cache manager with automatic delay
+            const String& line3_rbl_json = api_cache.FetchRBL(line3_rbl);
+            line3TrafficSet = GetMonitorsFromJson(line3_rbl_json);
+            Serial.print("Line 3 monitors fetched: ");
+            Serial.println(line3TrafficSet.size());
+          }
+
+          // Apply Line 3 specific filter if configured, otherwise use main filter
+          String line3_filter = cfg.GetLine3Filter();
+          if (line3_filter.isEmpty()) {
+            line3_filter = raw_filter;
+          }
+          line3TrafficSet = GetFilteredMonitors(line3TrafficSet, line3_filter);
+          Serial.print("Line 3 monitors after filter: ");
           Serial.println(line3TrafficSet.size());
         }
 
-        // Apply Line 3 specific filter if configured, otherwise use main filter
-        String line3_filter = cfg.GetLine3Filter();
-        if (line3_filter.isEmpty()) {
-          line3_filter = raw_filter;
-        }
-        line3TrafficSet = GetFilteredMonitors(line3TrafficSet, line3_filter);
-        Serial.print("Line 3 monitors after filter: ");
-        Serial.println(line3TrafficSet.size());
-      }
+        // Acquire the data mutex
+        if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
+          if (!tempTrafficSet.empty() || !line3TrafficSet.empty()) {
+            // Update succeeded - save the new data
+            allTrafficSetInit = tempTrafficSet;
 
-      // Acquire the data mutex
-      if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
-        if (!allTrafficSetInit.empty() || !line3TrafficSet.empty()) {
-          // Pass both datasets to the traffic manager
-          pTraficManager->update(allTrafficSetInit, line3TrafficSet);
+            // Pass both datasets to the traffic manager
+            pTraficManager->update(allTrafficSetInit, line3TrafficSet);
 #ifdef DEBUG_SERIAL_WIEN_MONITOR
-          Serial.println("Monitor data updated.");
+            Serial.println("Monitor data updated.");
 #endif
+            update_successful = true;
+          } else {
+            // Update failed - keep old data
+            Serial.println("Update failed - keeping old data visible");
+          }
+          // Release the data mutex
+          xSemaphoreGive(dataMutex);
         }
-        // Release the data mutex
-        xSemaphoreGive(dataMutex);
-      }
-      int execution_ms = static_cast<int>(sm.GetExecution_ms());
-      delay_real_ms = max(0, delay_planned_ms - execution_ms);
-    }  //SmartWatch end
-    vTaskDelay(pdMS_TO_TICKS(delay_real_ms));
+
+        int execution_ms = static_cast<int>(sm.GetExecution_ms());
+
+        if (!update_successful) {
+          // Failed to get data, schedule retry
+          if (retry_attempt < num_retries) {
+            int retry_delay = retry_delays_ms[retry_attempt];
+            Serial.print("Will retry in ");
+            Serial.print(retry_delay / 1000);
+            Serial.println(" seconds...");
+            delay_real_ms = max(0, retry_delay - execution_ms);
+          } else {
+            // Exhausted all retries, go back to normal schedule
+            Serial.println("All retries exhausted, resuming normal schedule");
+            delay_real_ms = max(0, delay_planned_ms - execution_ms);
+          }
+        } else {
+          // Success on first try or after retry, use normal delay
+          delay_real_ms = max(0, delay_planned_ms - execution_ms);
+        }
+      }  //SmartWatch end
+
+      vTaskDelay(pdMS_TO_TICKS(delay_real_ms));
+      retry_attempt++;
+    }
   }
 }
 
