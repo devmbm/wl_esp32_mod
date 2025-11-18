@@ -2344,21 +2344,46 @@ void PrintDegbugMonitors(const Monitor& monitor) {
 
 
 /**
+ * @brief Decrements all countdown values by a specified amount and removes entries that become <= 0.
+ * @param monitors Vector of monitors to decrement
+ * @param decrement_minutes Number of minutes to decrement (default 1)
+ */
+void DecrementMonitorCountdowns(std::vector<Monitor>& monitors, int decrement_minutes = 1) {
+  for (auto& monitor : monitors) {
+    std::vector<int> new_countdown;
+    new_countdown.reserve(monitor.countdown.size());
+
+    for (int countdown_value : monitor.countdown) {
+      int new_value = countdown_value - decrement_minutes;
+      if (new_value > 0) {
+        new_countdown.push_back(new_value);
+      }
+      // Values <= 0 are removed (train has departed)
+    }
+
+    monitor.countdown = new_countdown;
+  }
+}
+
+
+/**
  * @brief Updates data for a specific task.
  * @param pvParameters Pointer to task-specific parameters.
  */
 void UpdateDataTask(void* pvParameters) {
   std::vector<Monitor> allTrafficSetInit;
+  std::vector<Monitor> line3TrafficSetInit;
   const int& delay_planned_ms = global_settings.ms_task_delay_data_update;
   int delay_real_ms = 0;
 
-  // Retry delays in milliseconds: 5s, 10s, 15s, 20s, 40s
-  const int retry_delays_ms[] = {5000, 10000, 15000, 20000, 40000};
+  // Retry delays in milliseconds: 3s, 5s, 10s, 20s
+  const int retry_delays_ms[] = {3000, 5000, 10000, 20000};
   const int num_retries = sizeof(retry_delays_ms) / sizeof(retry_delays_ms[0]);
 
   while (true) {
     bool update_successful = false;
     int retry_attempt = 0;
+    bool first_attempt_of_cycle = true;
 
     // Keep trying until we succeed or exhaust all retries
     while (!update_successful && retry_attempt <= num_retries) {
@@ -2431,16 +2456,41 @@ void UpdateDataTask(void* pvParameters) {
           if (!tempTrafficSet.empty() || !line3TrafficSet.empty()) {
             // Update succeeded - save the new data
             allTrafficSetInit = tempTrafficSet;
+            line3TrafficSetInit = line3TrafficSet;
 
             // Pass both datasets to the traffic manager
-            pTraficManager->update(allTrafficSetInit, line3TrafficSet);
+            pTraficManager->update(allTrafficSetInit, line3TrafficSetInit);
 #ifdef DEBUG_SERIAL_WIEN_MONITOR
             Serial.println("Monitor data updated.");
 #endif
             update_successful = true;
           } else {
-            // Update failed - keep old data
-            Serial.println("Update failed - keeping old data visible");
+            // Update failed
+            if (first_attempt_of_cycle) {
+              // This is the first failure after a 60-second cycle
+              // Decrement old data by 1 minute and display it
+              Serial.println("Update failed - decrementing old data by 1 minute");
+
+              // Make copies to decrement
+              std::vector<Monitor> decrementedMain = allTrafficSetInit;
+              std::vector<Monitor> decrementedLine3 = line3TrafficSetInit;
+
+              DecrementMonitorCountdowns(decrementedMain, 1);
+              DecrementMonitorCountdowns(decrementedLine3, 1);
+
+              // Update display with decremented data
+              pTraficManager->update(decrementedMain, decrementedLine3);
+
+              // Save decremented data as current
+              allTrafficSetInit = decrementedMain;
+              line3TrafficSetInit = decrementedLine3;
+
+              first_attempt_of_cycle = false;
+              Serial.println("Displaying decremented countdowns");
+            } else {
+              // Subsequent retry - just keep showing current data
+              Serial.println("Retry failed - keeping current data visible");
+            }
           }
           // Release the data mutex
           xSemaphoreGive(dataMutex);
@@ -2458,7 +2508,7 @@ void UpdateDataTask(void* pvParameters) {
             delay_real_ms = max(0, retry_delay - execution_ms);
           } else {
             // Exhausted all retries, go back to normal schedule
-            Serial.println("All retries exhausted, resuming normal schedule");
+            Serial.println("All retries exhausted, resuming normal 60s schedule");
             delay_real_ms = max(0, delay_planned_ms - execution_ms);
           }
         } else {
