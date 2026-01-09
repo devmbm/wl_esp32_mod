@@ -1668,7 +1668,29 @@ public:
     if (current_time - last_toggle_time >= 4000) {
       show_first_departure = !show_first_departure;
       last_toggle_time = current_time;
-      p_screen->FullResetScroll();  // Reset scroll when toggling
+
+      // Intelligent scroll reset: only reset if description text changes
+      // This allows continuous scrolling of the same warning message
+      size_t numLines = monitors_per_line.size();
+      std::vector<bool> isNeedReset(numLines, true);
+
+      for (size_t display_line = 0; display_line < numLines; ++display_line) {
+        if (display_line < monitors_per_line.size()
+            && !monitors_per_line[display_line].empty()) {
+          const auto& line_monitors = monitors_per_line[display_line];
+          const Monitor& currentMonitor = line_monitors[0];
+
+          // Check if both first and second departures have the same description
+          if (currentMonitor.countdown.size() > 1) {
+            // Both departures are from the same monitor, so description is identical
+            // Don't reset scroll for this line
+            isNeedReset[display_line] = false;
+          }
+        }
+      }
+
+      // Apply selective reset
+      p_screen->SelectiveResetScroll(isNeedReset);
     }
 
     DrawTraficOnScreen();
@@ -1792,7 +1814,8 @@ public:
               entity.left_txt = String(currentMonitor.countdown[countdown_idx], DEC);
             }
           } else {
-            entity.left_txt = "";
+            // No countdown available at this index, but monitor exists
+            entity.left_txt = "-";
           }
 
           // Set the destination text (middle)
@@ -2349,11 +2372,13 @@ void PrintDegbugMonitors(const Monitor& monitor) {
  * @param decrement_minutes Number of minutes to decrement (default 1)
  */
 void DecrementMonitorCountdowns(std::vector<Monitor>& monitors, int decrement_minutes = 1) {
-  for (auto& monitor : monitors) {
+  // Use iterator to allow removal of monitors while iterating
+  auto it = monitors.begin();
+  while (it != monitors.end()) {
     std::vector<int> new_countdown;
-    new_countdown.reserve(monitor.countdown.size());
+    new_countdown.reserve(it->countdown.size());
 
-    for (int countdown_value : monitor.countdown) {
+    for (int countdown_value : it->countdown) {
       int new_value = countdown_value - decrement_minutes;
       if (new_value > 0) {
         new_countdown.push_back(new_value);
@@ -2361,7 +2386,13 @@ void DecrementMonitorCountdowns(std::vector<Monitor>& monitors, int decrement_mi
       // Values <= 0 are removed (train has departed)
     }
 
-    monitor.countdown = new_countdown;
+    // If all countdowns are gone (all trains departed), remove this monitor entirely
+    if (new_countdown.empty()) {
+      it = monitors.erase(it);
+    } else {
+      it->countdown = new_countdown;
+      ++it;
+    }
   }
 }
 
