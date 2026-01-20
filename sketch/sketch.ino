@@ -1604,7 +1604,7 @@ class TraficManager {
 public:
   TraficManager()
     : shift_cnt(0), coundown_idx(0), p_trafic_clock(nullptr),
-      last_toggle_time(0), show_first_departure(true) {}
+      last_toggle_time(0), show_first_departure(true), has_received_valid_data(false) {}
 
 
   ~TraficManager() {
@@ -1614,24 +1614,54 @@ public:
 
   // Block 1: Update Traffic Data
   void update(const std::vector<Monitor>& mainData, const std::vector<Monitor>& line3Data = std::vector<Monitor>()) {
-    //shift_cnt = 0;
     prev_iterations = 0;
-    //SmartWatch sm(__FUNCTION__);
 
-    // Organize monitors by display line
     const Config& cfg = global_settings.GetConfig();
 
-    // If we have separate Line 3 data, handle it specially
+    // Build new data in temporary variable (atomic swap pattern)
+    std::vector<std::vector<Monitor>> new_monitors_per_line;
+
     if (cfg.GetLinesCountAsInt() == 3 && !line3Data.empty()) {
-      monitors_per_line = GetMonitorsPerDisplayLineWithSeparateLine3(mainData, line3Data, cfg);
+      new_monitors_per_line = GetMonitorsPerDisplayLineWithSeparateLine3(mainData, line3Data, cfg);
     } else {
-      monitors_per_line = GetMonitorsPerDisplayLine(mainData, cfg);
+      new_monitors_per_line = GetMonitorsPerDisplayLine(mainData, cfg);
     }
 
     // Sort each line's monitors by countdown
-    for (auto& line_monitors : monitors_per_line) {
+    for (auto& line_monitors : new_monitors_per_line) {
       sortTrafic(line_monitors);
     }
+
+    // Validate and merge: preserve old data for lines where new data is empty
+    // This prevents showing "-" when we had valid data before
+    if (!monitors_per_line.empty() && has_received_valid_data) {
+      size_t num_lines = std::max(monitors_per_line.size(), new_monitors_per_line.size());
+      for (size_t i = 0; i < num_lines; ++i) {
+        bool new_has_data = (i < new_monitors_per_line.size()) && hasValidDepartureData(new_monitors_per_line[i]);
+        bool old_has_data = (i < monitors_per_line.size()) && hasValidDepartureData(monitors_per_line[i]);
+
+        // If old had data but new doesn't, keep old data for this line
+        if (old_has_data && !new_has_data && i < new_monitors_per_line.size()) {
+          new_monitors_per_line[i] = monitors_per_line[i];
+#ifdef DEBUG_SERIAL_WIEN_MONITOR
+          Serial.print("Line ");
+          Serial.print(i);
+          Serial.println(": Preserving old data (new data empty)");
+#endif
+        }
+      }
+    }
+
+    // Check if new data has any valid departures
+    for (const auto& line_monitors : new_monitors_per_line) {
+      if (hasValidDepartureData(line_monitors)) {
+        has_received_valid_data = true;
+        break;
+      }
+    }
+
+    // Atomic swap - fully prepared data replaces old data
+    std::swap(monitors_per_line, new_monitors_per_line);
 
     if (p_trafic_clock) {
       p_trafic_clock->Reset();
@@ -1851,8 +1881,8 @@ public:
         String configuredLine = cfg.GetLineName(display_line + 1);
         if (!configuredLine.isEmpty()) {
           entity.right_txt = configuredLine;
-          entity.left_txt = "-";
-          // Show "No departures" or similar message
+          // Only show "-" if we've received valid data before (distinguishes loading from empty)
+          entity.left_txt = has_received_valid_data ? "-" : "";
         } else {
           entity.right_txt = "";
           entity.left_txt = "";
@@ -1996,6 +2026,20 @@ public:
     return subtexts;
   }
 
+  /**
+   * @brief Checks if a display line has valid departure data.
+   * @param line_monitors The monitors for a display line.
+   * @return true if there is at least one monitor with at least one countdown value.
+   */
+  bool hasValidDepartureData(const std::vector<Monitor>& line_monitors) const {
+    for (const auto& monitor : line_monitors) {
+      if (!monitor.countdown.empty()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 private:
   std::vector<std::vector<Monitor>> monitors_per_line;  // Monitors organized by display line
   int shift_cnt;
@@ -2004,6 +2048,7 @@ private:
   long prev_iterations = 0;
   unsigned long last_toggle_time;  // Time of last departure toggle
   bool show_first_departure;       // Toggle between first and second departure
+  bool has_received_valid_data;    // Track if valid data ever received
 };
 
 ////////////////////////////Functions////////////////////////////////////////////
